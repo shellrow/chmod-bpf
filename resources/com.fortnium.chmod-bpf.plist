@@ -3,10 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.fortnium.chmodbpf</string>
+	<string>com.fortnium.chmod-bpf</string>
 	<key>RunAtLoad</key>
 	<true/>
-	<key>Program</key>
-	<string>/Library/Application Support/Fortnium/chmod-bpf/chmod-bpf.sh</string>
+	<key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Library/Application Support/Fortnium/chmod-bpf/chmod-bpf.sh</string>
+    </array>
 </dict>
 </plist>
