@@ -1,0 +1,22 @@
+[package]
+name = "chmod-bpf"
+version = "0.1.0"
+edition = "2021"
+authors = ["shellrow <shellrow@fortnium.com>"]
+description = "Library for managing BPF device permissions on macOS"
+repository = "https://github.com/shellrow/chmod-bpf"
+readme = "README.md"
+license = "MIT"
+
+# https://github.com/ogham/rust-users/issues/55
+#[profile.dev]
+#debug-assertions = false
+
+[dependencies]
+#users = "0.11"
+uzers = "0.11"
+glob = "0.3"
+
+[[example]]
+name = "check_permission"
+path = "examples/check_permission.rs"
