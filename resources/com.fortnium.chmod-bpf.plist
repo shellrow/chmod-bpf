@@ -7,6 +7,6 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>Program</key>
-	<string>/usr/local/bin/chmodbpf</string>
+	<string>/Library/Application Support/Fortnium/chmod-bpf/chmod-bpf.sh</string>
 </dict>
 </plist>

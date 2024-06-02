@@ -1,20 +1,73 @@
-pub mod user;
+pub mod app;
 pub mod bpf;
 pub mod daemon;
+pub mod handler;
+pub mod permission;
+pub mod process;
+pub mod resource;
+pub mod user;
+
+use clap::{crate_description, crate_name, crate_version};
+use clap::{Arg, ArgMatches, Command};
+use app::AppCommands;
 
 fn main() {
-    match bpf::check_all_bpf_device_permissions() {
-        Ok(_) => println!("All BPF devices have correct permissions."),
-        Err(e) => eprintln!("Error: {}", e),
+    env_logger::builder().filter_level(log::LevelFilter::Info).format_target(false).init();
+    log::info!("Starting {} v{}", crate_name!(), crate_version!());
+    let args: ArgMatches = parse_args();
+    let subcommand_name = args.subcommand_name().unwrap_or("");
+    let app_command = AppCommands::from_str(subcommand_name);
+
+    match app_command {
+        AppCommands::Check => {
+            handler::check_bpf_devices();
+        },
+        AppCommands::Install => {
+            if !privilege::user::privileged() {
+                log::error!("This program requires elevated permissions to install the daemon.");
+                println!("Please run the program with the 'install' sub-command as root.");
+                println!("Example: sudo {} install", crate_name!());
+                println!("Exiting...");
+                std::process::exit(1);
+            }
+            handler::install_daemon();
+        },
+        AppCommands::Uninstall => {
+            if !privilege::user::privileged() {
+                log::error!("This program requires elevated permissions to uninstall the daemon.");
+                println!("Please run the program with the 'uninstall' sub-command as root.");
+                println!("Example: sudo {} uninstall", crate_name!());
+                println!("Exiting...");
+                std::process::exit(1);
+            }
+            handler::uninstall_daemon();
+        },
     }
-    if user::current_user_in_group(bpf::BPF_GROUP) {
-        println!("User is in the BPF group.");
-    } else {
-        println!("User is not in the BPF group.");
-    }
-    if daemon::known_daemon_setting_exists() {
-        println!("Known daemon settings found.");
-    } else {
-        println!("Known daemon settings not found.");
-    }
+}
+
+fn parse_args() -> ArgMatches {
+    let app: Command = Command::new(crate_name!())
+        .version(crate_version!())
+        .about(crate_description!())
+        .arg(
+            Arg::new("auto")
+                .help("Automatically fix BPF device permissions")
+                .long("auto")
+                .short('a')
+                .num_args(0)
+        )
+        // Sub-command for check BPF device permissions
+        .subcommand(Command::new("check")
+            .about("Check BPF device permissions")
+        )
+        // Sub-command for install chmod-bpf daemon
+        .subcommand(Command::new("install")
+            .about("Install chmod-bpf daemon")
+        )
+        // Sub-command for uninstall chmod-bpf daemon
+        .subcommand(Command::new("uninstall")
+        .about("Uninstall chmod-bpf daemon")
+        )
+        ;
+    app.get_matches()
 }

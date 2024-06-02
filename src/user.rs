@@ -84,7 +84,6 @@ pub fn add_current_user_to_group(group_name: &str) -> Result<(), Box<dyn Error>>
                 .arg("user")
                 .arg(group_name)
                 .status()?;
-            println!("User {} added to group {} successfully.", user.name().to_string_lossy(), group_name);
         }
     }
     Ok(())
@@ -139,7 +138,6 @@ pub fn add_user_to_group(user: &str, group: &str) -> Result<(), Box<dyn Error>> 
         .arg("user") // The type of the entity to add, which is a user
         .arg(group) // The target group
         .status()?;
-    println!("User '{}' added to group '{}' successfully.", user, group);
     Ok(())
 }
 
@@ -155,6 +153,19 @@ pub fn add_group_to_group(group: &str, target_group: &str) -> Result<(), Box<dyn
         .arg("group") // The type of the entity to add, which is a group
         .arg(target_group) // The target group
         .status()?;
-    println!("Group '{}' added to group '{}' successfully.", group, target_group);
+    Ok(())
+}
+
+/// Deletes the specified group.
+pub fn delete_group(group_name: &str) -> Result<(), Box<dyn Error>> {
+    let status = Command::new("dseditgroup")
+        .arg("-o")
+        .arg("delete")
+        .arg(group_name)
+        .status()?;
+
+    if !status.success() {
+        eprintln!("Failed to delete group {}", group_name);
+    }
     Ok(())
 }

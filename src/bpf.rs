@@ -86,7 +86,7 @@ pub fn check_all_bpf_device_permissions() -> Result<(), String> {
         match check_read_write_permissions(path_str) {
             Ok(has_permissions) => {
                 if !has_permissions {
-                    return Err(format!("Permissions for {} are incorrect.", path_str));
+                    return Err(format!("You do not have the read/write permissions for {}.", path_str));
                 }
             },
             Err(e) => {

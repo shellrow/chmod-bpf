@@ -2,8 +2,14 @@ use std::error::Error;
 use std::process::{Command, Stdio};
 use std::str;
 
-pub const KNOWN_DAEMON_LABELS: [&str; 1] = ["org.wireshark.ChmodBPF"];
-pub const KNOWN_DAEMON_PLISTS: [&str; 1] = ["/Library/LaunchDaemons/org.wireshark.ChmodBPF.plist"];
+pub const KNOWN_DAEMON_LABELS: [&str; 2] = [
+    "com.fortnium.chmod-bpf.plist",
+    "org.wireshark.ChmodBPF",
+    ];
+pub const KNOWN_DAEMON_PLISTS: [&str; 2] = [
+    "/Library/LaunchDaemons/com.fortnium.chmod-bpf.plist",
+    "/Library/LaunchDaemons/org.wireshark.ChmodBPF.plist",
+    ];
 
 /// Checks if the specified LaunchDaemon is loaded.
 pub fn is_daemon_loaded(label: &str) -> Result<bool, Box<dyn Error>> {
@@ -48,27 +54,37 @@ pub fn reload_daemon(plist_path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Unloads the specified LaunchDaemon.
+pub fn unload_daemon(plist_path: &str) -> std::io::Result<()> {
+    Command::new("launchctl")
+        .arg("bootout")
+        .arg("system")
+        .arg(plist_path)
+        .output()?;
+    Ok(())
+}
+
 /// Checks if any of the known daemon settings are present.
-pub fn known_daemon_setting_exists() -> bool {
+pub fn check_known_daemon_settings() -> Result<String, Box<dyn Error>> {
     for plist in KNOWN_DAEMON_PLISTS.iter() {
         if std::path::Path::new(plist).exists() {
-            return true;
+            return Ok(plist.to_string());
         }
     }
-    false
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound).into())
 }
 
 /// Checks if any of the known daemons are loaded.
-pub fn known_daemons_loaded() -> bool {
+pub fn check_known_daemons() -> Result<String, Box<dyn Error>> {
     for label in KNOWN_DAEMON_LABELS.iter() {
         match is_daemon_loaded(label) {
             Ok(loaded) => {
                 if loaded {
-                    return true;
+                    return Ok(label.to_string());
                 }
             },
             Err(e) => eprintln!("Failed to check daemon {}: {}", label, e),
         }
     }
-    false
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound).into())
 }
