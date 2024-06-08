@@ -79,6 +79,18 @@ pub fn get_free_gid(min_gid: u32) -> Result<u32, Box<dyn Error>> {
     Ok(current_gid)
 }
 
+pub fn get_real_current_user() -> Option<uzers::User> {
+    if let Some(user_name) = get_original_user() {
+        get_user_by_name(&user_name)
+    }else {
+        if let Some(user_name) = get_current_username() {
+            get_user_by_name(&user_name)
+        }else{
+            None
+        }
+    }
+}
+
 /// Adds the current user to the specified group.
 pub fn add_current_user_to_group(group_name: &str) -> Result<(), Box<dyn Error>> {
     let user: uzers::User = if let Some(user_name) = get_original_user() {

@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::process::Command;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 use glob::glob;
 
@@ -79,11 +79,38 @@ pub fn check_read_write_permissions(file_path: &str) -> Result<bool, Box<dyn Err
     Ok(has_group_rw)
 }
 
+/// Check if the current user has read/write permissions for the file.
+pub fn check_current_user_read_write_permissions(file_path: &str) -> Result<bool, Box<dyn Error>> {
+    let metadata = fs::metadata(Path::new(file_path))?;
+    let permissions = metadata.permissions();
+
+    // Extract the mode to check permissions
+    let mode = permissions.mode();
+
+    // Check current user's uid and group's gid
+    if let Some(user) = crate::user::get_real_current_user() {
+        // Check current user's uid
+        if user.uid() == metadata.uid() {
+            return Ok(mode & 0o600 == 0o600); // Owner read/write
+        }
+        // Check group's gid
+        if let Some(groups) = user.groups() {
+            for group in groups {
+                if group.gid() == metadata.gid() {
+                    return Ok(mode & 0o060 == 0o060); // Group read/write
+                }
+            }
+        }
+    }
+    // Check others' permissions
+    Ok(mode & 0o006 == 0o006) // Others read/write
+}
+
 /// Checks if the group has read/write permissions for the BPF devices.
 pub fn check_all_bpf_device_permissions() -> Result<(), String> {
     for entry in glob("/dev/bpf*").unwrap().filter_map(Result::ok) {
         let path_str = entry.to_str().unwrap();
-        match check_read_write_permissions(path_str) {
+        match check_current_user_read_write_permissions(path_str) {
             Ok(has_permissions) => {
                 if !has_permissions {
                     return Err(format!("You do not have the read/write permissions for {}.", path_str));
