@@ -6,7 +6,7 @@ use std::path::Path;
 use glob::glob;
 
 pub const BPF_GROUP: &str = "access_bpf";
-pub const BPF_GROUP_NAME : &str = "BPF device access ACL";
+pub const BPF_GROUP_NAME : &str = "BPF Device ACL";
 pub const FORCE_CREATE_BPF_MAX: u32 = 256;
 
 /// Fetches the maximum number of creatable BPF devices on the system.
