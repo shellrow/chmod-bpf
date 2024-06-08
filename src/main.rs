@@ -9,7 +9,7 @@ pub mod user;
 
 use app::AppCommands;
 use clap::{crate_description, crate_name, crate_version};
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 
 fn main() {
     env_logger::builder()
@@ -52,13 +52,6 @@ fn parse_args() -> ArgMatches {
     let app: Command = Command::new(crate_name!())
         .version(crate_version!())
         .about(crate_description!())
-        .arg(
-            Arg::new("auto")
-                .help("Automatically fix BPF device permissions")
-                .long("auto")
-                .short('a')
-                .num_args(0),
-        )
         // Sub-command for check BPF device permissions
         .subcommand(Command::new("check").about("Check BPF device permissions"))
         // Sub-command for install chmod-bpf daemon
