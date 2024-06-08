@@ -5,23 +5,14 @@ edition = "2021"
 authors = ["shellrow <shellrow@fortnium.com>"]
 description = "Managing BPF device permissions on macOS"
 repository = "https://github.com/shellrow/chmod-bpf"
+homepage = "https://github.com/shellrow/chmod-bpf"
+documentation = "https://github.com/shellrow/chmod-bpf"
 readme = "README.md"
 license = "MIT"
 
 # https://github.com/ogham/rust-users/issues/55
 #[profile.dev]
 #debug-assertions = false
-
-[package.metadata.packager]
-before-packaging-command = "cargo build --release"
-authors = ["shellrow <shellrow@fortnium.com>"]
-identifier = "com.fortnium.chmod-bpf"
-version = "0.1.0"
-license_file = "LICENSE"
-category = "Developer Tool"
-copyright = "Copyright (c) shellrow 2024. All rights reserved."
-description = "Managing BPF device permissions on macOS"
-long_description = "Managing BPF device permissions on macOS"
 
 [dependencies]
 #users = "0.11"
@@ -32,3 +23,27 @@ clap = { version = "4.4", features = ["cargo"] }
 log = "0.4"
 env_logger = "0.11"
 inquire = "0.6"
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'cargo dist'
+[workspace.metadata.dist]
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.15.1"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "homebrew"]
+# A GitHub repo to push Homebrew formulas to
+tap = "shellrow/homebrew-tap-chmod-bpf"
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Publish jobs to run in CI
+pr-run-mode = "plan"
+# Whether to install an updater program
+install-updater = false
