@@ -1,17 +1,42 @@
 # chmod-bpf
-Managing BPF device permissions on macOS
+Managing BPF device permissions on macOS.  
+This tool provides a simple way to check, set, or remove permissions for BPF devices to enhance security and ease of management for developers and system administrators.
+
+## Features
+- Check current BPF device permissions.
+- Install and uninstall a daemon to automatically manage BPF device permissions.
+- Simple CLI interface for easy interaction.
+
+## Installation
+### Cargo 
+```
+cargo install chmod-bpf
+```
+
+### Clone and build
+```
+git clone https://github.com/shellrow/chmod-bpf.git
+cd chmod-bpf
+cargo build --release
+```
 
 ## Usage
+### Check BPF device permissions
 ```
-Usage: chmod-bpf [COMMAND]
+chmod-bpf check
+```
 
-Commands:
-  check      Check BPF device permissions
-  install    Install chmod-bpf daemon
-  uninstall  Uninstall chmod-bpf daemon
-  help       Print this message or the help of the given subcommand(s)
+### Install the chmod-bpf daemon
+```
+sudo chmod-bpf install
+```
 
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
+### Uninstall the chmod-bpf daemon
+```
+sudo chmod-bpf uninstall
+```
+
+### Display help information
+```
+chmod-bpf --help
 ```
