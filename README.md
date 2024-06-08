@@ -1,4 +1,8 @@
-# chmod-bpf
+[crates-badge]: https://img.shields.io/crates/v/chmod-bpf.svg
+[crates-url]: https://crates.io/crates/chmod-bpf
+[license-badge]: https://img.shields.io/crates/l/chmod-bpf.svg
+
+# chmod-bpf [![Crates.io][crates-badge]][crates-url] ![License][license-badge]
 Managing BPF device permissions on macOS.  
 This tool provides a simple way to check, set, or remove permissions for BPF devices to enhance security and ease of management for developers and system administrators.
 
