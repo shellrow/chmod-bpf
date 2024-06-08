@@ -10,7 +10,7 @@ impl AppCommands {
             "check" => AppCommands::Check,
             "install" => AppCommands::Install,
             "uninstall" => AppCommands::Uninstall,
-            _ => AppCommands::Check
+            _ => AppCommands::Check,
         }
     }
 }

@@ -1,10 +1,10 @@
-use uzers::{get_current_username, get_group_by_name, get_user_by_name};
+use std::env;
 use std::error::Error;
 use std::process::Command;
 use std::str;
-use std::env;
+use uzers::{get_current_username, get_group_by_name, get_user_by_name};
 
-pub const MIN_GID : u32 = 100;
+pub const MIN_GID: u32 = 100;
 
 /// Check if the user exists.
 pub fn user_exists(user_name: &str) -> bool {
@@ -25,7 +25,11 @@ pub fn get_original_uid() -> Option<u32> {
 }
 
 /// Creates a new group with the specified name and GID.
-pub fn create_group(group_name: &str, group_real_name: &str, gid: u32) -> Result<(), Box<dyn Error>> {
+pub fn create_group(
+    group_name: &str,
+    group_real_name: &str,
+    gid: u32,
+) -> Result<(), Box<dyn Error>> {
     Command::new("dseditgroup")
         .arg("-q")
         .arg("-o")
@@ -37,7 +41,10 @@ pub fn create_group(group_name: &str, group_real_name: &str, gid: u32) -> Result
         .arg(group_name)
         .status()?;
 
-    println!("Group '{}' with GID {} and name '{}' created successfully.", group_name, gid, group_real_name);
+    println!(
+        "Group '{}' with GID {} and name '{}' created successfully.",
+        group_name, gid, group_real_name
+    );
     Ok(())
 }
 
@@ -82,10 +89,10 @@ pub fn get_free_gid(min_gid: u32) -> Result<u32, Box<dyn Error>> {
 pub fn get_real_current_user() -> Option<uzers::User> {
     if let Some(user_name) = get_original_user() {
         get_user_by_name(&user_name)
-    }else {
+    } else {
         if let Some(user_name) = get_current_username() {
             get_user_by_name(&user_name)
-        }else{
+        } else {
             None
         }
     }
@@ -96,21 +103,25 @@ pub fn add_current_user_to_group(group_name: &str) -> Result<(), Box<dyn Error>>
     let user: uzers::User = if let Some(user_name) = get_original_user() {
         if let Some(user) = get_user_by_name(&user_name) {
             user
-        }else{
+        } else {
             return Err("Original user not found".into());
         }
-    }else {
+    } else {
         if let Some(user_name) = get_current_username() {
             if let Some(user) = get_user_by_name(&user_name) {
                 user
-            }else {
+            } else {
                 return Err("Current user not found".into());
             }
-        }else{
+        } else {
             return Err("Current user not found".into());
         }
     };
-    log::info!("Adding user '{}' to group '{}'", user.name().to_string_lossy(), group_name);
+    log::info!(
+        "Adding user '{}' to group '{}'",
+        user.name().to_string_lossy(),
+        group_name
+    );
     Command::new("dseditgroup")
         .arg("-q") // Quiet mode, suppresses some output
         .arg("-o")
@@ -155,7 +166,7 @@ pub fn user_in_group(user_name: &str, group_name: &str) -> bool {
                     return true;
                 }
             }
-        },
+        }
         None => return false,
     }
     false

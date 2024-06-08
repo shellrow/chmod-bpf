@@ -7,12 +7,15 @@ pub mod process;
 pub mod resource;
 pub mod user;
 
+use app::AppCommands;
 use clap::{crate_description, crate_name, crate_version};
 use clap::{Arg, ArgMatches, Command};
-use app::AppCommands;
 
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Info).format_target(false).init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .format_target(false)
+        .init();
     log::info!("Starting {} v{}", crate_name!(), crate_version!());
     let args: ArgMatches = parse_args();
     let subcommand_name = args.subcommand_name().unwrap_or("");
@@ -21,7 +24,7 @@ fn main() {
     match app_command {
         AppCommands::Check => {
             handler::check_bpf_devices();
-        },
+        }
         AppCommands::Install => {
             if !privilege::user::privileged() {
                 log::error!("This program requires elevated permissions to install the daemon.");
@@ -31,7 +34,7 @@ fn main() {
                 std::process::exit(1);
             }
             handler::install_daemon();
-        },
+        }
         AppCommands::Uninstall => {
             if !privilege::user::privileged() {
                 log::error!("This program requires elevated permissions to uninstall the daemon.");
@@ -41,7 +44,7 @@ fn main() {
                 std::process::exit(1);
             }
             handler::uninstall_daemon();
-        },
+        }
     }
 }
 
@@ -54,20 +57,13 @@ fn parse_args() -> ArgMatches {
                 .help("Automatically fix BPF device permissions")
                 .long("auto")
                 .short('a')
-                .num_args(0)
+                .num_args(0),
         )
         // Sub-command for check BPF device permissions
-        .subcommand(Command::new("check")
-            .about("Check BPF device permissions")
-        )
+        .subcommand(Command::new("check").about("Check BPF device permissions"))
         // Sub-command for install chmod-bpf daemon
-        .subcommand(Command::new("install")
-            .about("Install chmod-bpf daemon")
-        )
+        .subcommand(Command::new("install").about("Install chmod-bpf daemon"))
         // Sub-command for uninstall chmod-bpf daemon
-        .subcommand(Command::new("uninstall")
-        .about("Uninstall chmod-bpf daemon")
-        )
-        ;
+        .subcommand(Command::new("uninstall").about("Uninstall chmod-bpf daemon"));
     app.get_matches()
 }

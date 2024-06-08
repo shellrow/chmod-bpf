@@ -1,12 +1,12 @@
+use glob::glob;
 use std::error::Error;
-use std::process::Command;
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
-use glob::glob;
+use std::process::Command;
 
 pub const BPF_GROUP: &str = "access_bpf";
-pub const BPF_GROUP_NAME : &str = "BPF Device ACL";
+pub const BPF_GROUP_NAME: &str = "BPF Device ACL";
 pub const FORCE_CREATE_BPF_MAX: u32 = 256;
 
 /// Fetches the maximum number of creatable BPF devices on the system.
@@ -29,20 +29,18 @@ fn get_max_bpf_devices() -> Result<u32, Box<dyn Error>> {
         Err(_) => {
             eprintln!("Failed to parse the output as an integer");
             Err(std::io::Error::from(std::io::ErrorKind::Other).into())
-        },
+        }
     }
 }
 
 pub fn create_bpf_devices() -> Result<(), Box<dyn Error>> {
     let sysctl_max = get_max_bpf_devices()?;
     let max_devices = std::cmp::min(FORCE_CREATE_BPF_MAX, sysctl_max);
-    
+
     // Iterate and create BPF devices
     for i in 0..max_devices {
         let device_path = format!("/dev/bpf{}", i);
-        let _ = Command::new("cat")
-            .arg(&device_path)
-            .output();
+        let _ = Command::new("cat").arg(&device_path).output();
     }
 
     Ok(())
@@ -113,13 +111,16 @@ pub fn check_all_bpf_device_permissions() -> Result<(), String> {
         match check_current_user_read_write_permissions(path_str) {
             Ok(has_permissions) => {
                 if !has_permissions {
-                    return Err(format!("You do not have the read/write permissions for {}.", path_str));
+                    return Err(format!(
+                        "You do not have the read/write permissions for {}.",
+                        path_str
+                    ));
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Failed to check permissions for {}: {}", path_str, e);
                 return Err(e.to_string());
-            },
+            }
         }
     }
     Ok(())

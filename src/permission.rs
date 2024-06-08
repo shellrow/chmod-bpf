@@ -12,10 +12,7 @@ pub fn set_read_write_permissions(path: &str) -> Result<(), Box<dyn Error>> {
 /// Sets the owner and group for the specified path.
 /// The owner is set to root and the group is set to wheel.
 pub fn set_owner_group(path: &str) -> Result<(), Box<dyn Error>> {
-    Command::new("chown")
-        .arg("root:wheel")
-        .arg(path)
-        .status()?;
+    Command::new("chown").arg("root:wheel").arg(path).status()?;
     Ok(())
 }
 

@@ -2,14 +2,12 @@ use std::error::Error;
 use std::process::{Command, Stdio};
 use std::str;
 
-pub const KNOWN_DAEMON_LABELS: [&str; 2] = [
-    "com.fortnium.chmod-bpf.plist",
-    "org.wireshark.ChmodBPF",
-    ];
+pub const KNOWN_DAEMON_LABELS: [&str; 2] =
+    ["com.fortnium.chmod-bpf.plist", "org.wireshark.ChmodBPF"];
 pub const KNOWN_DAEMON_PLISTS: [&str; 2] = [
     "/Library/LaunchDaemons/com.fortnium.chmod-bpf.plist",
     "/Library/LaunchDaemons/org.wireshark.ChmodBPF.plist",
-    ];
+];
 
 /// Checks if the specified LaunchDaemon is loaded.
 pub fn is_daemon_loaded(label: &str) -> Result<bool, Box<dyn Error>> {
@@ -82,7 +80,7 @@ pub fn check_known_daemons() -> Result<String, Box<dyn Error>> {
                 if loaded {
                     return Ok(label.to_string());
                 }
-            },
+            }
             Err(e) => eprintln!("Failed to check daemon {}: {}", label, e),
         }
     }
