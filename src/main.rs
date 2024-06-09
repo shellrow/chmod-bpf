@@ -16,11 +16,12 @@ fn main() {
         .filter_level(log::LevelFilter::Info)
         .format_target(false)
         .init();
-    log::info!("Starting {} v{}", crate_name!(), crate_version!());
+    
     let args: ArgMatches = parse_args();
     let subcommand_name = args.subcommand_name().unwrap_or("");
     let app_command = AppCommands::from_str(subcommand_name);
 
+    log::info!("Starting {} v{}", crate_name!(), crate_version!());
     match app_command {
         AppCommands::Check => {
             handler::check_bpf_devices();
