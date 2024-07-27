@@ -6,6 +6,7 @@ pub mod permission;
 pub mod process;
 pub mod resource;
 pub mod user;
+pub mod output;
 
 use app::AppCommands;
 use clap::{crate_description, crate_name, crate_version};
