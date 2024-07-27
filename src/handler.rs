@@ -9,62 +9,63 @@ use crate::{
 use inquire::Confirm;
 
 pub fn check_bpf_devices() {
-    let mut tree = Tree::new(node_label("BPF device check result", None, None));
+    let mut tree: Tree<String> = Tree::new(node_label("BPF device check result", None, None));
     // 1. Check if the user has the required permissions for all BPF devices.
     log::info!("Checking BPF device permissions...");
+    let mut permission_tree: Tree<String>;
     match bpf::check_all_bpf_device_permissions() {
         Ok(_) => {
             let message: &str = "You have the required permissions for All BPF devices.";
             log::info!("{message}");
-            let mut permission_tree = Tree::new(node_label(&output::get_ok_log(output::LOG_LABEL_OK, "Permission"), None, None));
+            permission_tree = Tree::new(node_label(&output::get_ok_log(output::LOG_LABEL_OK, "Permission"), None, None));
             permission_tree.push(node_label(&output::get_ok_log(output::LOG_LABEL_OK, message), None, None));
-            tree.push(permission_tree);
         }
         Err(e) => {
             log::error!("{}", e);
-            let mut permission_tree = Tree::new(node_label(&output::get_error_log(output::LOG_LABEL_ERROR, "Permission"), None, None));
+            permission_tree = Tree::new(node_label(&output::get_error_log(output::LOG_LABEL_ERROR, "Permission"), None, None));
             permission_tree.push(node_label(&output::get_error_log(&output::LOG_LABEL_ERROR, &e), None, None));
-            tree.push(permission_tree);
         }
     }
+    tree.push(permission_tree);
     
     // 2. Check if the BPF devices are owned by the correct group.
     log::info!("Checking BPF device groups...");
+    let mut group_tree: Tree<String>;
     if user::current_user_in_group(bpf::BPF_GROUP) {
         let message: String = format!("Current user is in the BPF group: {}", bpf::BPF_GROUP);
         let message: &str = message.as_str();
         log::info!("{message}");
-        let mut group_tree = Tree::new(node_label(&output::get_ok_log(output::LOG_LABEL_OK, "Group"), None, None));
+        group_tree = Tree::new(node_label(&output::get_ok_log(output::LOG_LABEL_OK, "Group"), None, None));
         group_tree.push(node_label(&output::get_ok_log(output::LOG_LABEL_OK, message), None, None));
-        tree.push(group_tree);
     } else {
         let message: String = format!("Current user is not in the BPF group: {}", bpf::BPF_GROUP);
         let message: &str = message.as_str();
         log::error!("{message}");
-        let mut group_tree = Tree::new(node_label(&output::get_error_log(output::LOG_LABEL_ERROR, "Group"), None, None));
+        group_tree = Tree::new(node_label(&output::get_error_log(output::LOG_LABEL_ERROR, "Group"), None, None));
         group_tree.push(node_label(&output::get_error_log(&output::LOG_LABEL_ERROR, &message), None, None));
-        tree.push(group_tree);
     }
+    tree.push(group_tree);
     // 3. Check if the known daemon settings exist. (e.g. Wireshark)
     log::info!("Checking for known daemon settings...");
+    let mut daemon_tree: Tree<String>;
     match daemon::check_known_daemon_settings() {
         Ok(plist) => {
             let message: String = format!("Found known daemon settings: {}", plist);
             let message: &str = message.as_str();
             log::info!("{message}");
-            let mut daemon_tree = Tree::new(node_label(&output::get_ok_log(output::LOG_LABEL_OK, "Daemon"), None, None));
+            daemon_tree = Tree::new(node_label(&output::get_ok_log(output::LOG_LABEL_OK, "Daemon"), None, None));
             daemon_tree.push(node_label(&output::get_ok_log(output::LOG_LABEL_OK, message), None, None));
-            tree.push(daemon_tree);
         }
         Err(e) => {
             let message: String = format!("Failed to find known daemon settings: {}", e);
             let message: &str = message.as_str();
             log::error!("{message}");
-            let mut daemon_tree = Tree::new(node_label(&output::get_error_log(output::LOG_LABEL_ERROR, "Daemon"), None, None));
+            daemon_tree = Tree::new(node_label(&output::get_error_log(output::LOG_LABEL_ERROR, "Daemon"), None, None));
             daemon_tree.push(node_label(&output::get_error_log(&output::LOG_LABEL_ERROR, &message), None, None));
-            tree.push(daemon_tree);
         }
     }
+    tree.push(daemon_tree);
+    
     println!();
     println!("{}", tree);
 }
