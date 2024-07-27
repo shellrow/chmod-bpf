@@ -38,8 +38,8 @@ pub fn get_ok_log(label: &str, message: &str) -> String {
     format!("{dimmed_style}[{dimmed_style:#}{green_style}{label}{green_style:#}{dimmed_style}]{dimmed_style:#} {message}")
 }
 
-pub fn get_check_ok_log(label: &str, message: &str) -> String {
-    format!("{EMOJI_CHECK_MARK} {label} {message}")
+pub fn get_check_ok_log(message: &str) -> String {
+    format!("{EMOJI_CHECK_MARK} {message}")
 }
 
 pub fn get_error_log(label: &str, message: &str) -> String {
@@ -48,9 +48,8 @@ pub fn get_error_log(label: &str, message: &str) -> String {
     format!("{dimmed_style}[{dimmed_style:#}{red_style}{label}{red_style:#}{dimmed_style}]{dimmed_style:#} {message}")
 }
 
-pub fn get_check_error_log(label: &str, message: &str) -> String {
-    let red_style = anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Red)));
-    format!("{EMOJI_CROSS_MARK} {red_style}{label}{red_style:#} {message}")
+pub fn get_check_error_log(message: &str) -> String {
+    format!("{EMOJI_CROSS_MARK} {message}")
 }
 
 pub fn node_label(label: &str, value: Option<&str>, delimiter: Option<&str>) -> String {
