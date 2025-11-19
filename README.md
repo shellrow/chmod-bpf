@@ -3,8 +3,12 @@
 [license-badge]: https://img.shields.io/crates/l/chmod-bpf.svg
 
 # chmod-bpf [![Crates.io][crates-badge]][crates-url] ![License][license-badge]
-Managing BPF device permissions on macOS.  
-This tool provides a simple way to check, set, or remove permissions for BPF devices to enhance security and ease of management for developers and system administrators.
+Managing BPF device permissions on macOS.
+
+`chmod-bpf` is a helper utility that focuses on two things:
+
+* Auditing the current BPF device permissions so you immediately know whether packet capture tools will work.
+* Installing or uninstalling the hardened launch daemon, scripts, and groups that keep `/dev/bpf*` devices accessible to trusted operators.
 
 ## Features
 - Check current BPF device permissions.
@@ -38,22 +42,25 @@ cargo build --release
 ```
 
 ## Usage
-### Check BPF device permissions
+The CLI exposes three subcommands:
+
+* `check` - Audits BPF permissions, group membership, and known daemon configurations.
+* `install` - Installs the launch daemon, helper scripts, and `access_bpf` group. Requires `sudo`.
+* `uninstall` - Removes all helper assets and tears down the daemon. Requires `sudo`.
+
+Every administrative subcommand accepts `-y/--yes` to skip the confirmation prompt when you are scripting the tool.
+
 ```sh
+# Inspect the current permissions
 chmod-bpf check
 ```
 
-### Install the chmod-bpf daemon
 ```sh
+# Install everything without prompting
 sudo chmod-bpf install
 ```
 
-### Uninstall the chmod-bpf daemon
 ```sh
+# Remove every asset that was previously installed
 sudo chmod-bpf uninstall
-```
-
-### Display help information
-```sh
-chmod-bpf --help
 ```
