@@ -1,64 +1,67 @@
-pub mod app;
-pub mod bpf;
-pub mod daemon;
-pub mod handler;
-pub mod permission;
-pub mod process;
-pub mod resource;
-pub mod user;
-pub mod output;
+mod bpf;
+mod command;
+mod daemon;
+mod handler;
+mod output;
+mod permission;
+mod resource;
+mod user;
 
-use app::AppCommands;
-use clap::{crate_description, crate_name, crate_version};
-use clap::{ArgMatches, Command};
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use tracing::{error, info};
+use tracing_subscriber::{filter::EnvFilter, fmt::time::ChronoLocal};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Audit the local system and summarise the current BPF device posture.
+    Check,
+    /// Install the helper launch daemon and supporting assets.
+    Install {
+        /// Skip interactive confirmation prompts.
+        #[arg(short = 'y', long = "yes")]
+        assume_yes: bool,
+    },
+    /// Remove the helper launch daemon and clean up all assets.
+    Uninstall {
+        /// Skip interactive confirmation prompts.
+        #[arg(short = 'y', long = "yes")]
+        assume_yes: bool,
+    },
+}
 
 fn main() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .format_target(false)
-        .init();
-    
-    let args: ArgMatches = parse_args();
-    let subcommand_name = args.subcommand_name().unwrap_or("");
-    let app_command = AppCommands::from_str(subcommand_name);
-
-    log::info!("Starting {} v{}", crate_name!(), crate_version!());
-    match app_command {
-        AppCommands::Check => {
-            handler::check_bpf_devices();
-        }
-        AppCommands::Install => {
-            if !privilege::user::privileged() {
-                log::error!("This program requires elevated permissions to install the daemon.");
-                println!("Please run the program with the 'install' sub-command as root.");
-                println!("Example: sudo {} install", crate_name!());
-                println!("Exiting...");
-                std::process::exit(1);
-            }
-            handler::install_daemon();
-        }
-        AppCommands::Uninstall => {
-            if !privilege::user::privileged() {
-                log::error!("This program requires elevated permissions to uninstall the daemon.");
-                println!("Please run the program with the 'uninstall' sub-command as root.");
-                println!("Example: sudo {} uninstall", crate_name!());
-                println!("Exiting...");
-                std::process::exit(1);
-            }
-            handler::uninstall_daemon();
-        }
+    if let Err(err) = run() {
+        error!(?err, "Command failed");
+        std::process::exit(1);
     }
 }
 
-fn parse_args() -> ArgMatches {
-    let app: Command = Command::new(crate_name!())
-        .version(crate_version!())
-        .about(crate_description!())
-        // Sub-command for check BPF device permissions
-        .subcommand(Command::new("check").about("Check BPF device permissions"))
-        // Sub-command for install chmod-bpf daemon
-        .subcommand(Command::new("install").about("Install chmod-bpf daemon"))
-        // Sub-command for uninstall chmod-bpf daemon
-        .subcommand(Command::new("uninstall").about("Uninstall chmod-bpf daemon"));
-    app.get_matches()
+fn run() -> Result<()> {
+    init_tracing();
+    let cli = Cli::parse();
+
+    info!("Launching chmod-bpf");
+    match cli.command {
+        Commands::Check => handler::check_bpf_devices(),
+        Commands::Install { assume_yes } => handler::install_daemon(assume_yes),
+        Commands::Uninstall { assume_yes } => handler::uninstall_daemon(assume_yes),
+    }
+}
+
+fn init_tracing() {
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".into()))
+        .init();
 }

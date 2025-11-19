@@ -1,15 +1,12 @@
+use anyhow::{Context, Result, anyhow};
 use std::env;
-use std::error::Error;
 use std::process::Command;
 use std::str;
-use uzers::{get_current_username, get_group_by_name, get_user_by_name};
+use uzers::{User, get_current_username, get_effective_uid, get_group_by_name, get_user_by_name};
+
+use crate::command;
 
 pub const MIN_GID: u32 = 100;
-
-/// Check if the user exists.
-pub fn user_exists(user_name: &str) -> bool {
-    get_user_by_name(user_name).is_some()
-}
 
 /// Check if the group exists.
 pub fn group_exists(group_name: &str) -> bool {
@@ -20,17 +17,30 @@ pub fn get_original_user() -> Option<String> {
     env::var("SUDO_USER").ok()
 }
 
-pub fn get_original_uid() -> Option<u32> {
-    env::var("SUDO_UID").ok().and_then(|uid| uid.parse().ok())
+pub fn require_root() -> Result<()> {
+    if get_effective_uid() == 0 {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "This command must be executed with elevated privileges (sudo)."
+        ))
+    }
+}
+
+pub fn get_real_current_user() -> Option<User> {
+    if let Some(user_name) = get_original_user() {
+        get_user_by_name(&user_name)
+    } else if let Some(user_name) = get_current_username() {
+        get_user_by_name(&user_name)
+    } else {
+        None
+    }
 }
 
 /// Creates a new group with the specified name and GID.
-pub fn create_group(
-    group_name: &str,
-    group_real_name: &str,
-    gid: u32,
-) -> Result<(), Box<dyn Error>> {
-    Command::new("dseditgroup")
+pub fn create_group(group_name: &str, group_real_name: &str, gid: u32) -> Result<()> {
+    let mut command = Command::new("dseditgroup");
+    command
         .arg("-q")
         .arg("-o")
         .arg("create")
@@ -38,43 +48,39 @@ pub fn create_group(
         .arg(gid.to_string())
         .arg("-r")
         .arg(group_real_name)
-        .arg(group_name)
-        .status()?;
+        .arg(group_name);
 
-    println!(
-        "Group '{}' with GID {} and name '{}' created successfully.",
-        group_name, gid, group_real_name
-    );
-    Ok(())
+    command::run(
+        &mut command,
+        &format!("create group {group_name} with gid {gid}"),
+    )
 }
 
 /// Get the first available GID starting from min_gid.
-pub fn get_free_gid(min_gid: u32) -> Result<u32, Box<dyn Error>> {
-    // Execute the dscl command to list groups and their GIDs
+pub fn get_free_gid(min_gid: u32) -> Result<u32> {
     let output = Command::new("dscl")
         .arg(".")
         .arg("-list")
         .arg("/Groups")
         .arg("PrimaryGroupID")
-        .output()?;
+        .output()
+        .context("Failed to query dscl for group IDs")?;
 
     if !output.status.success() {
-        eprintln!("Command execution failed");
-        return Err(std::io::Error::from(std::io::ErrorKind::Other).into());
+        return Err(anyhow!(
+            "dscl exited with status {} while searching for a free gid",
+            output.status
+        ));
     }
 
-    // Parse the output and collect GIDs
-    let output_str = str::from_utf8(&output.stdout)?;
+    let output_str = str::from_utf8(&output.stdout).context("dscl output was not UTF-8")?;
     let mut gids: Vec<u32> = output_str
         .lines()
         .filter_map(|line| line.split_whitespace().nth(1))
         .filter_map(|gid| gid.parse::<u32>().ok())
-        .collect();
-
-    // Sort GIDs
+        .collect::<Vec<u32>>();
     gids.sort_unstable();
 
-    // Find the first available GID starting from min_gid
     let mut current_gid = min_gid;
     for gid in gids {
         if gid != current_gid && gid >= min_gid {
@@ -86,53 +92,26 @@ pub fn get_free_gid(min_gid: u32) -> Result<u32, Box<dyn Error>> {
     Ok(current_gid)
 }
 
-pub fn get_real_current_user() -> Option<uzers::User> {
-    if let Some(user_name) = get_original_user() {
-        get_user_by_name(&user_name)
-    } else {
-        if let Some(user_name) = get_current_username() {
-            get_user_by_name(&user_name)
-        } else {
-            None
-        }
-    }
-}
-
 /// Adds the current user to the specified group.
-pub fn add_current_user_to_group(group_name: &str) -> Result<(), Box<dyn Error>> {
-    let user: uzers::User = if let Some(user_name) = get_original_user() {
-        if let Some(user) = get_user_by_name(&user_name) {
-            user
-        } else {
-            return Err("Original user not found".into());
-        }
-    } else {
-        if let Some(user_name) = get_current_username() {
-            if let Some(user) = get_user_by_name(&user_name) {
-                user
-            } else {
-                return Err("Current user not found".into());
-            }
-        } else {
-            return Err("Current user not found".into());
-        }
-    };
-    log::info!(
-        "Adding user '{}' to group '{}'",
-        user.name().to_string_lossy(),
-        group_name
-    );
-    Command::new("dseditgroup")
-        .arg("-q") // Quiet mode, suppresses some output
+pub fn add_current_user_to_group(group_name: &str) -> Result<()> {
+    let user =
+        get_real_current_user().ok_or_else(|| anyhow!("Unable to resolve the current user"))?;
+    let username = user.name().to_string_lossy().into_owned();
+
+    let mut command = Command::new("dseditgroup");
+    command
+        .arg("-q")
         .arg("-o")
         .arg("edit")
         .arg("-a")
-        .arg(user.name().to_string_lossy().as_ref())
+        .arg(&username)
         .arg("-t")
         .arg("user")
-        .arg(group_name)
-        .status()?;
-    Ok(())
+        .arg(group_name);
+    command::run(
+        &mut command,
+        &format!("add user {username} to group {group_name}"),
+    )
 }
 
 /// Check if the current user is in the specified group.
@@ -151,67 +130,27 @@ pub fn current_user_in_group(group_name: &str) -> bool {
     false
 }
 
-/// Check if the specified user is in the specified group.
-pub fn user_in_group(user_name: &str, group_name: &str) -> bool {
-    // Retrieve the user by name
-    let user = match get_user_by_name(user_name) {
-        Some(user) => user,
-        None => return false, // User not found
-    };
-    match user.groups() {
-        Some(groups) => {
-            //println!("Groups: {:?}", groups);
-            for group in groups {
-                if group.name() == group_name {
-                    return true;
-                }
-            }
-        }
-        None => return false,
-    }
-    false
-}
-
-/// Adds the specified user to the specified group.
-pub fn add_user_to_group(user: &str, group: &str) -> Result<(), Box<dyn Error>> {
-    Command::new("dseditgroup")
-        .arg("-q") // Quiet mode, suppresses some output
-        .arg("-o")
-        .arg("edit")
-        .arg("-a")
-        .arg(user) // The name of the user to add
-        .arg("-t")
-        .arg("user") // The type of the entity to add, which is a user
-        .arg(group) // The target group
-        .status()?;
-    Ok(())
-}
-
 /// Adds the specified group to the specified group.
-pub fn add_group_to_group(group: &str, target_group: &str) -> Result<(), Box<dyn Error>> {
-    Command::new("dseditgroup")
-        .arg("-q") // Quiet mode, suppresses some output
+pub fn add_group_to_group(group: &str, target_group: &str) -> Result<()> {
+    let mut command = Command::new("dseditgroup");
+    command
+        .arg("-q")
         .arg("-o")
         .arg("edit")
         .arg("-a")
-        .arg(group) // The name of the group to add
+        .arg(group)
         .arg("-t")
-        .arg("group") // The type of the entity to add, which is a group
-        .arg(target_group) // The target group
-        .status()?;
-    Ok(())
+        .arg("group")
+        .arg(target_group);
+    command::run(
+        &mut command,
+        &format!("add group {group} to group {target_group}"),
+    )
 }
 
 /// Deletes the specified group.
-pub fn delete_group(group_name: &str) -> Result<(), Box<dyn Error>> {
-    let status = Command::new("dseditgroup")
-        .arg("-o")
-        .arg("delete")
-        .arg(group_name)
-        .status()?;
-
-    if !status.success() {
-        eprintln!("Failed to delete group {}", group_name);
-    }
-    Ok(())
+pub fn delete_group(group_name: &str) -> Result<()> {
+    let mut command = Command::new("dseditgroup");
+    command.arg("-o").arg("delete").arg(group_name);
+    command::run(&mut command, &format!("delete group {group_name}"))
 }

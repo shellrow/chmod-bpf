@@ -7,11 +7,11 @@
 
 # Set the owner to root and remove write permissions for group and others,
 # and ensure that all files are readable and directories are accessible.
-chown -R root:wheel "/Library/Application Support/Fortnium/chmod-bpf"
-chmod -R a+rX,go-w "/Library/Application Support/Fortnium/chmod-bpf"
+chown -R root:wheel "/Library/Application Support/Foctal/chmod-bpf"
+chmod -R a+rX,go-w "/Library/Application Support/Foctal/chmod-bpf"
 
 # Variables for plist and group management
-CHMOD_BPF_PLIST="/Library/LaunchDaemons/com.fortnium.chmod-bpf.plist"
+CHMOD_BPF_PLIST="/Library/LaunchDaemons/com.foctal.chmod-bpf.plist"
 BPF_GROUP="access_bpf"
 BPF_GROUP_NAME="BPF Device ACL"
 min_gid=100
