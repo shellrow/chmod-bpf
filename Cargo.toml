@@ -37,13 +37,9 @@ cargo-dist-version = "0.28.7"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["shell", "homebrew"]
-# A GitHub repo to push Homebrew formulas to
-tap = "shellrow/homebrew-tap-chmod-bpf"
+installers = ["shell"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
-# Publish jobs to run in CI
-publish-jobs = ["homebrew"]
 # Which actions to run on pull requests
 pr-run-mode = "plan"
 # Whether to install an updater program

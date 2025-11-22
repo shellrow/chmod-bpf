@@ -22,12 +22,6 @@ Managing BPF device permissions on macOS.
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shellrow/chmod-bpf/releases/latest/download/chmod-bpf-installer.sh | sh
 ```
 
-### Install prebuilt binaries via Homebrew
-
-```sh
-brew install shellrow/tap-chmod-bpf/chmod-bpf
-```
-
 ### Cargo 
 
 ```sh
