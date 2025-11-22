@@ -21,7 +21,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Audit the local system and summarise the current BPF device posture.
+    /// Audit BPF permissions, group membership, and daemon configurations.
     Check,
     /// Install the helper launch daemon and supporting assets.
     Install {
