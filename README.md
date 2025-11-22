@@ -50,17 +50,17 @@ The CLI exposes three subcommands:
 
 Every administrative subcommand accepts `-y/--yes` to skip the confirmation prompt when you are scripting the tool.
 
+Inspect the current permissions
 ```sh
-# Inspect the current permissions
 chmod-bpf check
 ```
 
+Install everything without prompting
 ```sh
-# Install everything without prompting
 sudo chmod-bpf install
 ```
 
+Remove every asset that was previously installed
 ```sh
-# Remove every asset that was previously installed
 sudo chmod-bpf uninstall
 ```
