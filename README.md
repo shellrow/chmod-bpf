@@ -55,7 +55,7 @@ Inspect the current permissions
 chmod-bpf check
 ```
 
-Install everything without prompting
+Install everything
 ```sh
 sudo chmod-bpf install
 ```
