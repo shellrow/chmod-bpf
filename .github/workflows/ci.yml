@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            toolchain: stable
+          - runner: macos-15-intel
+            toolchain: 1.88.0
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+      - name: Test
+        run: cargo +${{ matrix.toolchain }} test --locked
+      - name: Lint macOS code
+        if: matrix.toolchain == 'stable'
+        run: |
+          rustup component add clippy --toolchain stable
+          cargo +stable clippy --all-targets --locked -- -D warnings
+      - name: Validate launchd configuration
+        if: matrix.toolchain == 'stable'
+        run: plutil -lint resources/com.foctal.chmod-bpf.plist
+
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+      - name: Format
+        run: cargo +stable fmt --all -- --check
+      - name: Test CLI on an unsupported platform
+        run: cargo +stable test --locked
+      - name: Check shell helpers
+        run: |
+          shellcheck scripts/*.sh
+          python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Cache advisory checker
+        id: audit-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-ubuntu-24.04-${{ runner.arch }}-0.22.2
+      - name: Install advisory checker
+        if: steps.audit-cache.outputs.cache-hit != 'true'
+        run: cargo +stable install cargo-audit --locked --version 0.22.2
+      - name: Audit dependencies
+        run: cargo audit --deny warnings

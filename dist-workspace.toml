@@ -1,0 +1,17 @@
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.34.0"
+# The hand-maintained workflow builds artifacts only; publication is manual.
+ci = []
+hosting = ["github"]
+create-release = false
+installers = ["shell"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+unix-archive = ".tar.gz"
+checksum = "sha256"
+install-path = "CARGO_HOME"
+install-updater = false
+source-tarball = false
+include = ["SECURITY.md", "docs"]

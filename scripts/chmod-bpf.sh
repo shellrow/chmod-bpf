@@ -1,37 +1,68 @@
-#! /bin/zsh
-# shellcheck shell=bash
+#!/bin/sh
+# Manage only numbered BPF character devices. Run as root via launchd.
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+umask 077
+report_exit() {
+    result=$?
+    trap - 0
+    if [ "$result" -ne 0 ]; then
+        /usr/bin/logger -t chmod-bpf "BPF permission update failed (exit $result)" || :
+    fi
+    exit "$result"
+}
+trap report_exit 0
 
-# Description:
-# This script is designed to manage Berkeley Packet Filter (BPF) devices on macOS.
-# It pre-creates a specified number of BPF devices and configures their ownership
-# and permissions to allow designated group members to capture and send raw packets.
-
-# Purpose:
-# - Pre-create a defined number of BPF devices up to the system's maximum.
-# - Assign ownership of these devices to the 'access_bpf' group.
-# - Set permissions to read-write for the group, allowing packet capture and transmission.
-
-# Maximum number of BPF devices to pre-create, set to 256 by default.
-# Can be adjusted as needed but should not exceed the system maximum.
-FORCE_CREATE_BPF_MAX=256
-
-# Fetch the system's maximum number of BPF devices to ensure we do not exceed this.
-SYSCTL_MAX=$( sysctl -n debug.bpf_maxdevices )
-if [ "$FORCE_CREATE_BPF_MAX" -gt "$SYSCTL_MAX" ] ; then
-	FORCE_CREATE_BPF_MAX=$SYSCTL_MAX
+uid=$(/usr/bin/id -u)
+if [ "$uid" != 0 ]; then
+    echo "chmod-bpf: this helper requires root" >&2
+    exit 1
 fi
 
-# Log the action of configuring BPF devices.
-syslog -s -l notice "chmod-bpf: Forcing creation and setting permissions for /dev/bpf0-$(( FORCE_CREATE_BPF_MAX - 1))"
+maximum=$(/usr/sbin/sysctl -n debug.bpf_maxdevices)
+case "$maximum" in
+    ''|*[!0-9]*) echo "chmod-bpf: invalid debug.bpf_maxdevices" >&2; exit 1 ;;
+esac
+if [ "${#maximum}" -gt 10 ] || [ "$maximum" -lt 1 ]; then
+    echo "chmod-bpf: debug.bpf_maxdevices is out of range" >&2
+    exit 1
+fi
+limit=256
+if [ "$maximum" -lt "$limit" ]; then limit=$maximum; fi
 
-# Loop through and pre-create BPF devices up to the determined maximum.
-# This loop ensures that each device is ready and accessible by the 'access_bpf' group.
-CUR_DEV=0
-while [ "$CUR_DEV" -lt "$FORCE_CREATE_BPF_MAX" ] ; do
-	read -r -n 0 < /dev/bpf$CUR_DEV > /dev/null 2>&1
-	CUR_DEV=$(( CUR_DEV + 1 ))
+# Opening a node causes Darwin to create the next one. A busy node may refuse
+# the open while remaining a valid device whose permissions can be updated.
+index=0
+while [ "$index" -lt "$limit" ]; do
+    device=/dev/bpf$index
+    if [ -L "$device" ] || { [ -e "$device" ] && [ ! -c "$device" ]; }; then
+        echo "chmod-bpf: refusing unexpected file type at $device" >&2
+        exit 1
+    fi
+    next=$((index + 1))
+    if [ "$next" -lt "$limit" ] && [ ! -c "/dev/bpf$next" ]; then
+        ( : < "$device" ) 2>/dev/null || :
+    fi
+    index=$next
 done
 
-# Set the group to 'access_bpf' and grant group members read-write permissions.
-chgrp access_bpf /dev/bpf*
-chmod g+rw /dev/bpf*
+set --
+for device in /dev/bpf[0-9]*; do
+    suffix=${device#/dev/bpf}
+    case "$suffix" in ''|*[!0-9]*) continue ;; esac
+    if [ -L "$device" ] || [ ! -c "$device" ]; then
+        echo "chmod-bpf: expected a character device at $device" >&2
+        exit 1
+    fi
+    set -- "$@" "$device"
+done
+if [ "$#" -eq 0 ]; then
+    echo "chmod-bpf: no BPF devices were found" >&2
+    exit 1
+fi
+
+# Darwin devfs has no extended ACLs. chmod -N fails with ENOTSUP even when
+# there is no ACL, so apply only ownership and mode changes to these devices.
+/usr/sbin/chown root:access_bpf "$@"
+/bin/chmod 0660 "$@"

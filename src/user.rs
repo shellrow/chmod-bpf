@@ -1,156 +1,266 @@
-use anyhow::{Context, Result, anyhow};
-use std::env;
-use std::process::Command;
-use std::str;
-use uzers::{User, get_current_username, get_effective_uid, get_group_by_name, get_user_by_name};
+use anyhow::{Context, Result, bail};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+};
+use uzers::{
+    User, get_current_uid, get_effective_uid, get_group_by_name, get_user_by_name, get_user_by_uid,
+};
 
-use crate::command;
+use crate::{bpf::BPF_GROUP, command};
 
 pub const MIN_GID: u32 = 100;
 
-/// Check if the group exists.
-pub fn group_exists(group_name: &str) -> bool {
-    get_group_by_name(group_name).is_some()
-}
-
-pub fn get_original_user() -> Option<String> {
-    env::var("SUDO_USER").ok()
+pub struct Identity {
+    pub name: String,
+    pub uid: u32,
+    pub gids: Vec<u32>,
+    pub current_process: bool,
 }
 
 pub fn require_root() -> Result<()> {
-    if get_effective_uid() == 0 {
-        Ok(())
+    if get_effective_uid() != 0 {
+        bail!("This operation requires root. Re-run with sudo, or use --dry-run to preview it.");
+    }
+    Ok(())
+}
+
+fn account(name: &str) -> Result<User> {
+    if name.is_empty()
+        || name.starts_with('-')
+        || name.chars().any(|c| c.is_control() || c == '/' || c == ':')
+    {
+        bail!("Invalid account name: {name:?}");
+    }
+    get_user_by_name(name).with_context(|| format!("Account {name:?} does not exist"))
+}
+
+pub fn resolve(name: Option<&str>) -> Result<Identity> {
+    let user = if let Some(name) = name {
+        account(name)?
+    } else if get_effective_uid() == 0 && env::var_os("SUDO_USER").is_some() {
+        let name = env::var("SUDO_USER").context("SUDO_USER is not valid UTF-8; use --user")?;
+        let user = account(&name)?;
+        let uid: u32 = env::var("SUDO_UID")
+            .context("SUDO_UID is missing; use --user")?
+            .parse()
+            .context("Invalid SUDO_UID; use --user")?;
+        if uid != user.uid() {
+            bail!("SUDO_USER and SUDO_UID disagree; specify --user explicitly");
+        }
+        user
     } else {
-        Err(anyhow!(
-            "This command must be executed with elevated privileges (sudo)."
-        ))
-    }
-}
-
-pub fn get_real_current_user() -> Option<User> {
-    if let Some(user_name) = get_original_user() {
-        get_user_by_name(&user_name)
-    } else if let Some(user_name) = get_current_username() {
-        get_user_by_name(&user_name)
-    } else {
-        None
-    }
-}
-
-/// Creates a new group with the specified name and GID.
-pub fn create_group(group_name: &str, group_real_name: &str, gid: u32) -> Result<()> {
-    let mut command = Command::new("dseditgroup");
-    command
-        .arg("-q")
-        .arg("-o")
-        .arg("create")
-        .arg("-i")
-        .arg(gid.to_string())
-        .arg("-r")
-        .arg(group_real_name)
-        .arg(group_name);
-
-    command::run(
-        &mut command,
-        &format!("create group {group_name} with gid {gid}"),
-    )
-}
-
-/// Get the first available GID starting from min_gid.
-pub fn get_free_gid(min_gid: u32) -> Result<u32> {
-    let output = Command::new("dscl")
-        .arg(".")
-        .arg("-list")
-        .arg("/Groups")
-        .arg("PrimaryGroupID")
-        .output()
-        .context("Failed to query dscl for group IDs")?;
-
-    if !output.status.success() {
-        return Err(anyhow!(
-            "dscl exited with status {} while searching for a free gid",
-            output.status
-        ));
-    }
-
-    let output_str = str::from_utf8(&output.stdout).context("dscl output was not UTF-8")?;
-    let mut gids: Vec<u32> = output_str
-        .lines()
-        .filter_map(|line| line.split_whitespace().nth(1))
-        .filter_map(|gid| gid.parse::<u32>().ok())
-        .collect::<Vec<u32>>();
+        get_user_by_uid(get_current_uid()).context("Unable to resolve the current account")?
+    };
+    let groups = user
+        .groups()
+        .context("Unable to resolve account group memberships")?;
+    let mut gids: Vec<_> = groups.iter().map(|group| group.gid()).collect();
+    gids.push(user.primary_group_id());
     gids.sort_unstable();
+    gids.dedup();
+    Ok(Identity {
+        name: user
+            .name()
+            .to_str()
+            .context("Account name is not valid UTF-8")?
+            .to_owned(),
+        uid: user.uid(),
+        gids,
+        current_process: user.uid() == get_current_uid() && user.uid() == get_effective_uid(),
+    })
+}
 
-    let mut current_gid = min_gid;
-    for gid in gids {
-        if gid != current_gid && gid >= min_gid {
-            break;
-        }
-        current_gid += 1;
+pub fn install_users(mut users: Vec<String>, include_admin: bool) -> Result<Vec<String>> {
+    if users.is_empty() && !include_admin {
+        users.push(resolve(None)?.name);
     }
-
-    Ok(current_gid)
+    validate_users(users)
 }
 
-/// Adds the current user to the specified group.
-pub fn add_current_user_to_group(group_name: &str) -> Result<()> {
-    let user =
-        get_real_current_user().ok_or_else(|| anyhow!("Unable to resolve the current user"))?;
-    let username = user.name().to_string_lossy().into_owned();
+pub fn validate_users(users: Vec<String>) -> Result<Vec<String>> {
+    let mut names = BTreeSet::new();
+    for name in users {
+        let user = account(&name)?;
+        if user.uid() == 0 {
+            bail!("Root already has BPF access. Specify a non-root account with --user.");
+        }
+        names.insert(
+            user.name()
+                .to_str()
+                .context("Account name is not valid UTF-8")?
+                .to_owned(),
+        );
+    }
+    Ok(names.into_iter().collect())
+}
 
-    let mut command = Command::new("dseditgroup");
-    command
-        .arg("-q")
-        .arg("-o")
-        .arg("edit")
-        .arg("-a")
-        .arg(&username)
-        .arg("-t")
-        .arg("user")
-        .arg(group_name);
+pub fn group_gid() -> Option<u32> {
+    get_group_by_name(BPF_GROUP).map(|group| group.gid())
+}
+
+fn local_groups() -> Result<BTreeMap<String, u32>> {
+    let output = command::output(
+        command::system("/usr/bin/dscl").args([".", "-list", "/Groups", "PrimaryGroupID"]),
+        "list local group IDs",
+    )?;
+    if !output.status.success() {
+        bail!(
+            "Unable to list local groups: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    parse_groups(std::str::from_utf8(&output.stdout).context("Invalid dscl output")?)
+}
+
+fn validate_group_resolution(local: Option<u32>, resolved: Option<u32>) -> Result<Option<u32>> {
+    if local != resolved {
+        bail!(
+            "access_bpf must resolve to the same local group through Directory Services. Resolve any network-group shadowing or stale directory cache before changing access."
+        );
+    }
+    Ok(local)
+}
+
+/// Mutations target the local node; never use a network-only or shadowed group.
+pub fn managed_group_gid() -> Result<Option<u32>> {
+    validate_group_resolution(local_groups()?.get(BPF_GROUP).copied(), group_gid())
+}
+
+pub fn ensure_group() -> Result<()> {
+    let groups = local_groups()?;
+    if validate_group_resolution(groups.get(BPF_GROUP).copied(), group_gid())?.is_some() {
+        return Ok(());
+    }
+    let gids = groups.values().copied().collect();
+    let gid = first_free_gid(&gids, MIN_GID, |gid| uzers::get_group_by_gid(gid).is_some())?;
     command::run(
-        &mut command,
-        &format!("add user {username} to group {group_name}"),
-    )
+        command::system("/usr/sbin/dseditgroup").args([
+            "-q",
+            "-n",
+            ".",
+            "-o",
+            "create",
+            "-i",
+            &gid.to_string(),
+            "-r",
+            "BPF device access",
+            BPF_GROUP,
+        ]),
+        "create access_bpf",
+    )?;
+    if managed_group_gid()? != Some(gid) {
+        bail!(
+            "The new access_bpf group is not yet resolvable; retry installation after Directory Services refreshes"
+        );
+    }
+    Ok(())
 }
 
-/// Check if the current user is in the specified group.
-pub fn current_user_in_group(group_name: &str) -> bool {
-    if let Some(user_name) = get_current_username() {
-        if let Some(user) = get_user_by_name(&user_name) {
-            if let Some(groups) = user.groups() {
-                for group in groups {
-                    if group.name() == group_name {
-                        return true;
-                    }
-                }
+fn parse_groups(text: &str) -> Result<BTreeMap<String, u32>> {
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let (name, value) = line
+                .trim_end()
+                .rsplit_once(char::is_whitespace)
+                .context("Malformed dscl group record")?;
+            if name.trim().is_empty() {
+                bail!("Missing group name in dscl output");
             }
-        }
-    }
-    false
+            // macOS includes the signed nobody/nogroup ID (-2).
+            let gid: i64 = value.parse().context("Invalid group ID in dscl output")?;
+            if !(-2_147_483_648..=4_294_967_295).contains(&gid) {
+                bail!("Group ID is out of range");
+            }
+            Ok((name.trim_end().to_owned(), gid as u32))
+        })
+        .collect()
 }
 
-/// Adds the specified group to the specified group.
-pub fn add_group_to_group(group: &str, target_group: &str) -> Result<()> {
-    let mut command = Command::new("dseditgroup");
-    command
-        .arg("-q")
-        .arg("-o")
-        .arg("edit")
-        .arg("-a")
-        .arg(group)
-        .arg("-t")
-        .arg("group")
-        .arg(target_group);
+fn first_free_gid(
+    gids: &BTreeSet<u32>,
+    minimum: u32,
+    mut resolves: impl FnMut(u32) -> bool,
+) -> Result<u32> {
+    let mut candidate = minimum;
+    while gids.contains(&candidate) || resolves(candidate) {
+        candidate = candidate
+            .checked_add(1)
+            .context("No group IDs are available")?;
+    }
+    Ok(candidate)
+}
+
+pub fn change_membership(name: &str, kind: &str, grant: bool) -> Result<()> {
     command::run(
-        &mut command,
-        &format!("add group {group} to group {target_group}"),
+        command::system("/usr/sbin/dseditgroup").args([
+            "-q",
+            "-n",
+            ".",
+            "-o",
+            "edit",
+            if grant { "-a" } else { "-d" },
+            name,
+            "-t",
+            kind,
+            BPF_GROUP,
+        ]),
+        &format!(
+            "{} {kind} {name:?} {} access_bpf",
+            if grant { "add" } else { "remove" },
+            if grant { "to" } else { "from" }
+        ),
     )
 }
 
-/// Deletes the specified group.
-pub fn delete_group(group_name: &str) -> Result<()> {
-    let mut command = Command::new("dseditgroup");
-    command.arg("-o").arg("delete").arg(group_name);
-    command::run(&mut command, &format!("delete group {group_name}"))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gid_allocation_ignores_lower_and_duplicate_ids() {
+        let groups =
+            parse_groups("wheel 0\nstaff 20\na 100\nb 100\nc 102 \t\nnobody -2\n").unwrap();
+        let gids = groups.values().copied().collect();
+        assert_eq!(first_free_gid(&gids, 100, |_| false).unwrap(), 101);
+        assert_eq!(
+            first_free_gid(&BTreeSet::new(), 100, |_| false).unwrap(),
+            100
+        );
+        assert!(first_free_gid(&BTreeSet::from([u32::MAX]), u32::MAX, |_| false).is_err());
+    }
+
+    #[test]
+    fn malformed_group_records_fail_closed() {
+        for input in ["group", "group invalid", "group 4294967296"] {
+            assert!(parse_groups(input).is_err());
+        }
+    }
+
+    #[test]
+    fn invalid_accounts_are_rejected() {
+        for name in ["", "-root", "a/b", "a\nb", "a:b"] {
+            assert!(account(name).is_err());
+        }
+    }
+    #[test]
+    fn gid_allocation_checks_local_and_network_ids_together() {
+        assert_eq!(
+            first_free_gid(&BTreeSet::from([101]), 100, |gid| gid == 100).unwrap(),
+            102
+        );
+    }
+
+    #[test]
+    fn mutations_reject_network_only_or_shadowed_groups() {
+        assert_eq!(validate_group_resolution(None, None).unwrap(), None);
+        assert_eq!(
+            validate_group_resolution(Some(101), Some(101)).unwrap(),
+            Some(101)
+        );
+        for (local, resolved) in [(None, Some(101)), (Some(101), None), (Some(101), Some(102))] {
+            assert!(validate_group_resolution(local, resolved).is_err());
+        }
+    }
 }
