@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Label</key>
-	<string>com.foctal.chmod-bpf</string>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>ProgramArguments</key>
+    <key>Label</key>
+    <string>com.foctal.chmod-bpf</string>
+    <key>ProgramArguments</key>
     <array>
-        <string>/bin/zsh</string>
+        <string>/bin/sh</string>
         <string>/Library/Application Support/Foctal/chmod-bpf/chmod-bpf.sh</string>
     </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Umask</key>
+    <integer>63</integer>
 </dict>
 </plist>
