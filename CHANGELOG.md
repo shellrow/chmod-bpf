@@ -15,7 +15,7 @@
 - Uninstall preserves the shared group and device permissions. `--revoke-access` restricts current devices and refuses to compete with another known manager.
 - The helper applies root:access_bpf 0660 without ACLs at boot and every 60 seconds.
 - Updated dependencies, removed unused UI/logging dependencies, and included Cargo.lock for reproducible builds.
-- Distribution uses cargo-dist 0.34.0 to build Apple Silicon and Intel archives, checksums, and a shell installer. Builds are manually invoked and do not publish releases.
+- Version tag pushes build and verify Apple Silicon and Intel archives, checksums, and a shell installer with cargo-dist 0.34.0, then publish them to GitHub Releases.
 
 ### Fixed
 
