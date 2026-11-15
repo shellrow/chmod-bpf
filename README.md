@@ -12,8 +12,7 @@ BPF access permits packet capture and raw packet injection. Grant it only to tru
 Install the prebuilt CLI without sudo:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -fsSL https://github.com/shellrow/chmod-bpf/releases/latest/download/chmod-bpf-installer.sh -o chmod-bpf-installer.sh
-sh chmod-bpf-installer.sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shellrow/chmod-bpf/releases/latest/download/chmod-bpf-installer.sh | sh
 ```
 
 The installer selects Apple Silicon or Intel and installs to `$CARGO_HOME/bin` (by default, `~/.cargo/bin`). Follow its instructions to update your shell's `PATH`. Installing the CLI alone does not change system permissions.
