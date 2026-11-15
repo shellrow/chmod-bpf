@@ -1,27 +1,37 @@
-# Maintainer-triggered build only. Publishing and tagging remain manual.
-name: Build distribution artifacts (manual)
+name: Release
 
 on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  # Publish an existing tag using the workflow from the selected branch.
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag matching Cargo.toml (for example, v0.6.0)
+        description: Existing release tag to build and publish (for example, v0.6.0)
         required: true
         type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  build:
+  release:
     runs-on: macos-15
+    permissions:
+      contents: write
     env:
       RUSTUP_TOOLCHAIN: 1.88.0
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          ref: refs/tags/${{ env.RELEASE_TAG }}
       - name: Install Rust
         run: rustup toolchain install 1.88.0 --profile minimal --target aarch64-apple-darwin --target x86_64-apple-darwin
       - name: Install cargo-dist
@@ -36,11 +46,12 @@ jobs:
         run: |
           test "$(dist --version)" = 'cargo-dist 0.34.0'
           dist generate --check
-          dist plan --tag "$RELEASE_TAG"
+          dist plan --tag "$RELEASE_TAG" --output-format=json > "$RUNNER_TEMP/dist-plan.json"
+          test "$(jq -r '.announcement_tag' "$RUNNER_TEMP/dist-plan.json")" = "$RELEASE_TAG"
       - name: Test
         run: cargo test --locked
       - name: Build distribution
-        run: dist build --artifacts=all --tag "$RELEASE_TAG"
+        run: dist build --artifacts=all --tag "$RELEASE_TAG" --output-format=json > "$RUNNER_TEMP/dist-manifest.json"
       - name: Verify distribution
         run: |
           cd target/distrib
@@ -65,3 +76,36 @@ jobs:
             target/distrib/sha256.sum
           if-no-files-found: error
           retention-days: 14
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          manifest="$RUNNER_TEMP/dist-manifest.json"
+          test "$(jq -r '.announcement_tag' "$manifest")" = "$RELEASE_TAG"
+          title=$(jq -er '.announcement_title' "$manifest")
+          prerelease=$(jq -er '.announcement_is_prerelease | tostring' "$manifest")
+          jq -er '.announcement_github_body' "$manifest" > "$RUNNER_TEMP/release-notes.md"
+          assets=(
+            target/distrib/*.tar.gz
+            target/distrib/*.tar.gz.sha256
+            target/distrib/chmod-bpf-installer.sh
+            target/distrib/sha256.sum
+          )
+          test "${#assets[@]}" -eq 6
+          for asset in "${assets[@]}"; do test -s "$asset"; done
+
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/release.json"; then
+            if ! jq -e '.isDraft == true' "$RUNNER_TEMP/release.json" > /dev/null; then
+              echo "Release $RELEASE_TAG is already published; refusing to replace its assets." >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "$title" --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --prerelease="$prerelease"
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          gh release edit "$RELEASE_TAG" --verify-tag --draft=false \
+            --title "$title" --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease="$prerelease"

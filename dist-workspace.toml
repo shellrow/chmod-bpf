@@ -3,9 +3,10 @@ members = ["cargo:."]
 
 [dist]
 cargo-dist-version = "0.34.0"
-# The hand-maintained workflow builds artifacts only; publication is manual.
+# Keep the single-job release workflow hand-maintained.
 ci = []
 hosting = ["github"]
+# The workflow publishes with GitHub CLI after verifying the artifacts.
 create-release = false
 installers = ["shell"]
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
