@@ -1,74 +1,68 @@
 # Administration
 
-## Installed assets
+## Manage access
 
-| Path | Purpose |
-| --- | --- |
-| `/Library/LaunchDaemons/com.foctal.chmod-bpf.plist` | Root:wheel 0644 launchd configuration. |
-| `/Library/Application Support/Foctal/chmod-bpf/chmod-bpf.sh` | Root:wheel 0644 helper, interpreted by `/bin/sh`. |
-| `/Library/Application Support/Foctal/.chmod-bpf.lock` | Root-owned administrative lock, retained after uninstall. |
-
-New helper directories are root-owned with mode 0755. The `access_bpf` group is shared and is never deleted by this tool. Local group records must agree with Directory Services name resolution; network-only or shadowed groups are rejected for administrative changes.
-
-Only one BPF manager should be installed. Recognized external managers are `org.wireshark.ChmodBPF` and `org.macports.wireshark.ChmodBPF`. Custom agents and MDM policies are not automatically detected.
-
-## Access management
-
-For deployment agents or root shells, select accounts explicitly:
+Use account short names. When installing from a root shell or deployment agent, specify the accounts that need access. For example, run this command as root to grant access to Alice and Bob without a confirmation prompt.
 
 ```sh
-sudo /usr/local/bin/chmod-bpf install --user alice --user bob --yes
-sudo /usr/local/bin/chmod-bpf grant alice --yes
-sudo /usr/local/bin/chmod-bpf revoke bob --yes
+chmod-bpf install --user alice --user bob --yes
 ```
 
-Use the actual trusted installation path if it differs. Users must log out fully and log back in after membership changes. Removing direct membership does not remove access inherited through another group. Inspect the shared group with:
+To grant access to every administrator, use `--include-admin`. This adds the `admin` group to `access_bpf`. Combine it with `--user` to grant direct membership to specific users as well. Reinstalling preserves existing memberships.
+
+Once the local group exists, you can change membership without reinstalling the daemon. These commands also work with the local `access_bpf` group used by Wireshark or MacPorts.
+
+```sh
+sudo chmod-bpf grant alice
+sudo chmod-bpf revoke bob
+```
+
+Have affected users log out of macOS and log back in. To investigate access inherited through a group, inspect the local record and check the user's effective directory membership.
 
 ```sh
 /usr/bin/dscl . -read /Groups/access_bpf
-/usr/sbin/dseditgroup -o checkmember -m alice access_bpf
+/usr/sbin/dseditgroup -o checkmember -m bob access_bpf
 ```
 
-Older installations may have nested the entire `admin` group. After granting direct memberships to the intended operators, an administrator can remove that policy:
+If `admin` is nested in `access_bpf` and only specific users should have access, grant those users direct membership before removing the nested group.
 
 ```sh
 sudo /usr/sbin/dseditgroup -n . -o edit -d admin -t group access_bpf
 ```
 
-For immediate revocation, close the affected capture applications and sessions as well. Permission changes do not invalidate open file descriptors.
+## Daemon and device permissions
 
-## Upgrades and recovery
+The launchd job `com.foctal.chmod-bpf` runs at load and every 60 seconds. Its helper tries to make up to 256 devices available, subject to `debug.bpf_maxdevices`. It applies `root:access_bpf` ownership and mode `0660` to all existing numbered BPF character devices, including those above that limit. New devices may have to wait until the next run.
 
-After updating the CLI, preview and rerun `install` with the desired accounts to update its embedded assets. Updating only the binary does not update the installed helper.
-
-Installation runs the helper synchronously before registering the daemon. On failure it attempts to restore previous file contents, permissions, group ownership, and service registration. Recovery failures are reported. If a registered service has missing assets, uninstall it before reinstalling.
-
-Recovery is not a whole-system transaction. Created directories, the shared group, launchd enablement, and device permissions already applied may remain. Memberships are applied last; a failure may leave earlier accounts updated. Inspect the error and `check` output before retrying. Power loss and process termination can interrupt recovery.
-
-Uninstall is safe to repeat. It removes only this daemon's plist and helper, and removes the helper directory only if empty. Unrelated files, the shared group, and memberships are retained. Device permissions remain until recreation, usually at reboot, unless `--revoke-access` is supplied.
-
-The lock file's existence does not indicate a running operation. Kernel locks are released when the owning process exits. Do not delete an active lock file to bypass contention; wait for the other operation to finish.
-
-## Troubleshooting
-
-| Symptom | Action |
+| Installed file | Purpose |
 | --- | --- |
-| Access denied after a grant | Fully log out/in, then run `check` without sudo. |
-| Configuration exists but service is unregistered | Rerun this tool's `install`, or use the external manager's original installer. |
-| Competing manager detected | Keep one manager and remove the other with its installer. |
-| Unsafe installation path | Review ownership, write permissions, links, and ACLs manually. |
-| Newly created nodes are inaccessible | Wait for the next helper pass; check for helper failures if the problem persists. |
-| Registered daemon is not running | Normal between passes; inspect devices and helper diagnostics. |
+| `/Library/LaunchDaemons/com.foctal.chmod-bpf.plist` | launchd configuration |
+| `/Library/Application Support/Foctal/chmod-bpf/chmod-bpf.sh` | Helper run by `/bin/sh` |
+| `/Library/Application Support/Foctal/.chmod-bpf.lock` | Lock shared by administrative commands |
 
-Read-only diagnostics:
+The plist and helper are owned by `root:wheel` with mode `0644`. The lock file persists after uninstall. If another command holds the lock, wait for it to finish.
+
+## Upgrades and troubleshooting
+
+After updating the CLI, rerun `install` with the intended accounts to update the installed plist and helper.
+
+- **Installation conflict.** `install` checks for the Wireshark and MacPorts ChmodBPF daemons. If you use a custom launch daemon or an MDM policy, check it separately before switching managers.
+- **Unsafe installation path.** Inspect the path named in the error for ownership, group or world write access, symlinks, or extended ACLs.
+- **Group lookup mismatch.** Check that Directory Services resolves `access_bpf` to the local group's ID. Resolve any conflicting network group or stale cache before retrying.
+- **Incomplete installation.** Run `chmod-bpf check` and review the error. A failed install can leave device permissions or some memberships in place. If the service is registered but its plist or helper is missing, run `uninstall` before reinstalling.
+- **Devices still inaccessible.** Run `chmod-bpf check` in a fresh login session. The helper exits between runs. Inspect its registration and recent failure messages with the commands below.
 
 ```sh
-chmod-bpf check --json
 /bin/launchctl print system/com.foctal.chmod-bpf
-/usr/bin/log show --last 15m --style compact --predicate 'eventMessage CONTAINS "chmod-bpf"'
-/usr/sbin/sysctl -n debug.bpf_maxdevices
+/usr/bin/log show --last 15m --style compact --predicate 'eventMessage CONTAINS "BPF permission update failed"'
 ```
 
-The helper logs failures with the `chmod-bpf` tag. `launchctl print` output is for human inspection; its text format is not a stable API.
+## Uninstall
 
-The compatibility scripts `scripts/install.sh` and `scripts/uninstall.sh` require an absolute path to the CLI as their first argument and forward the remaining options.
+```sh
+sudo chmod-bpf uninstall
+```
+
+Uninstall preserves the shared group, its memberships, and current device permissions. To reset existing devices to `root:wheel` with mode `0600`, use `uninstall --revoke-access`. This option refuses to run if a recognized external BPF manager is present. Close any open capture sessions when revoking access, since they retain their open device handles.
+
+To remove the CLI itself, run `cargo uninstall chmod-bpf` for a Cargo installation or delete the prebuilt executable from its installation directory.
