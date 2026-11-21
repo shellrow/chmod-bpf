@@ -1,96 +1,65 @@
 # chmod-bpf
 
-[![Crates.io](https://img.shields.io/crates/v/chmod-bpf.svg)](https://crates.io/crates/chmod-bpf)
-[![License](https://img.shields.io/crates/l/chmod-bpf.svg)](LICENSE)
+`chmod-bpf` lets trusted users capture packets on macOS without running capture applications as root. A launch daemon gives members of the local `access_bpf` group read and write access to Berkeley Packet Filter (BPF) devices. This access also permits raw packet injection.
 
-Manage macOS BPF permissions so trusted users can capture packets without running capture applications as root. The CLI audits access, manages group membership, and installs a launch daemon to maintain device permissions.
+## Install the CLI
 
-BPF access permits packet capture and raw packet injection. Grant it only to trusted users.
-
-## Installation
-
-Install the prebuilt CLI without sudo:
+Run the installer as your regular user on Apple Silicon or Intel Macs.
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shellrow/chmod-bpf/releases/latest/download/chmod-bpf-installer.sh | sh
 ```
 
-The installer selects Apple Silicon or Intel and installs to `$CARGO_HOME/bin` (by default, `~/.cargo/bin`). Follow its instructions to update your shell's `PATH`. Installing the CLI alone does not change system permissions.
+The installer places `chmod-bpf` in `$CARGO_HOME/bin` (normally `~/.cargo/bin`). Follow its instructions to add that directory to your `PATH`.
 
-Alternatively, install with Rust 1.88 or newer:
+For manual installation, download the archive and matching `.sha256` file for your Mac (`aarch64` for Apple Silicon or `x86_64` for Intel) from [GitHub Releases](https://github.com/shellrow/chmod-bpf/releases). In the download directory, run `shasum -a 256 -c` with the checksum filename. After verification, extract the archive and place `chmod-bpf` on your `PATH`.
+
+With Rust 1.88 or later, you can also install the CLI through Cargo.
 
 ```sh
 cargo install chmod-bpf --locked
 ```
 
-For a local source checkout, use `cargo install --path . --locked`.
+## Set up packet capture
 
-For manual installation, download the matching archive and its `.sha256` file from [GitHub Releases](https://github.com/shellrow/chmod-bpf/releases). Choose `aarch64` for Apple Silicon or `x86_64` for Intel. Run `shasum -a 256 -c <archive>.sha256`, extract the archive, and place `chmod-bpf` on your `PATH`. Prebuilt binaries do not require Rust. CI tests both architectures on macOS 15; other macOS versions require separate validation.
+Run `chmod-bpf check` without sudo to see whether your account already has access. If Wireshark or MacPorts already manages BPF permissions, keep using that manager or remove it with its original installer before installing this daemon.
 
-The shell installer verifies checksums when `sha256sum` is available. Otherwise, it skips verification; use the manual procedure above to verify with macOS's `shasum`.
+Preview the changes, then install the daemon and grant access to the account invoking sudo.
 
-## Quick start
+```sh
+chmod-bpf install --dry-run
+sudo chmod-bpf install
+```
+
+Log out of macOS and log back in so your session picks up the new group membership. Then verify access as the user who will run the capture application.
 
 ```sh
 chmod-bpf check
-chmod-bpf install --dry-run
-sudo "$(command -v chmod-bpf)" install
 ```
-
-Using the absolute executable path avoids differences between your `PATH` and sudo's. Installation grants access to the original sudo caller. Log out fully and log back in, then run `chmod-bpf check` without sudo.
-
-If Wireshark's or MacPorts' BPF manager is installed, use that manager or remove it with its original installer first. `install` refuses to compete with either. `check`, `grant`, and `revoke` can be used with an existing local `access_bpf` group.
 
 ## Commands
 
-| Command | Purpose |
+| Command | Description |
 | --- | --- |
-| `check [--json] [--user NAME]` | Audit device access, permissions, membership, and daemon registration. |
-| `install [--user NAME] [--include-admin]` | Install or repair the daemon. Repeat `--user` for multiple accounts. |
-| `grant USER...` | Add direct memberships to the local `access_bpf` group. |
-| `revoke USER...` | Remove direct memberships; inherited access is unaffected. |
-| `uninstall [--revoke-access]` | Remove this daemon and its assets. Optionally restrict current BPF devices. |
+| `check [--json] [--user NAME]` | Check device permissions, account access, and daemon registration. |
+| `install [--user NAME] [--include-admin]` | Install or repair the daemon. Repeat `--user` to grant access to several accounts. |
+| `grant USER...` | Add users to the existing local `access_bpf` group. |
+| `revoke USER...` | Remove direct group memberships. Users may still inherit access through another group. |
+| `uninstall [--revoke-access]` | Remove the daemon and helper. Add `--revoke-access` to restrict existing BPF devices to root. |
 | `completions SHELL` | Print completions for Bash, Zsh, Fish, Elvish, or PowerShell. |
 
-Administrative commands accept `--dry-run` to validate and preview changes without sudo, and `-y`/`--yes` to skip confirmation. Noninteractive changes require `--yes`. Interactive confirmation defaults to No.
+Commands that change the system require root. Use `--dry-run` to preview them without sudo. Use `--yes` (`-y`) to skip confirmation when running noninteractively.
 
-```sh
-chmod-bpf install --user alice --user bob --dry-run
-sudo "$(command -v chmod-bpf)" install --user alice --user bob --yes
-sudo "$(command -v chmod-bpf)" revoke bob --yes
-```
+## Audit results
 
-Use account short names. Root shells and deployment agents must specify `--user` or `--include-admin`. The latter grants access to all administrators and does not add an implicit user. Reinstalling preserves existing memberships, including any previously nested `admin` group.
+A healthy audit finds at least one numbered BPF device. All devices must be readable and writable by the selected account, owned by `root:access_bpf`, and set to mode `0660` with no extended ACLs. The account must belong to `access_bpf`, and exactly one recognized daemon must be installed and registered. For its own daemon, `chmod-bpf` also verifies the installed helper and configuration against the copies in the CLI.
 
-## Audit output
+For the current user, `check` tests OS permissions without opening a device. When checking a different user, including the original caller under sudo, it estimates access from directory group membership and device mode bits. A capture also needs a free device.
 
-Run `check` as the capture operator. It uses the OS access check without opening a BPF device. Reports for another account, including the original caller under sudo, use directory groups and mode bits when the account differs from the process identity. These reports are labeled `directory_mode_estimate`; they cannot verify that account's current session credentials.
+`chmod-bpf check --json` writes the report to standard output, including when the audit finds problems. The report includes `schema_version` (currently `1`), `healthy`, `issues`, and `access_evaluation`. The exit status is `0` for a healthy audit, `1` for an unhealthy audit or command failure, and `2` for invalid arguments.
 
-A healthy result requires accessible devices with `root:access_bpf 0660` permissions and no ACLs, group membership, and exactly one registered known daemon with its configuration present. This tool's own installed assets must also match the CLI version. A registered one-shot daemon need not be running between passes. Device checks do not guarantee that a subsequent capture can open a free node.
-
-| Exit code | Meaning |
-| --- | --- |
-| `0` | Healthy audit, completed command, successful preview, or interactive cancellation. |
-| `1` | Unhealthy audit, failed operation, or unsupported platform. |
-| `2` | Invalid arguments. |
-
-`check --json` writes a report to stdout even for an unhealthy audit. `schema_version` is `1`; consumers should accept additional fields and reject unsupported versions. The report includes the account, evaluation method, group, devices, daemon registrations, issues, and hints. Mutation commands use text output. Command errors go to stderr.
-
-```sh
-chmod-bpf check --json > bpf-audit.json
-```
-
-## Operation and removal
-
-The helper runs at boot and every 60 seconds. It pre-creates up to 256 BPF devices, bounded by the system limit, then sets all existing numbered BPF character devices to `root:access_bpf 0660`. Darwin devfs does not support extended ACLs, so the helper does not attempt ACL removal. New devices may remain inaccessible until the next pass; timers can be delayed during sleep.
-
-```sh
-chmod-bpf uninstall --dry-run
-sudo "$(command -v chmod-bpf)" uninstall --yes
-```
-
-Uninstall preserves the shared group, memberships, and current device permissions. Use `--revoke-access` to reset devices to `root:wheel 0600` without ACLs; this refuses to run alongside another known manager. Neither group changes nor permission changes revoke already-open capture handles. Remove the CLI separately with `cargo uninstall chmod-bpf` if installed through Cargo. For a prebuilt installation, delete the executable from its installation directory.
+See the [administration guide](docs/administration.md) for group management, upgrades, troubleshooting, and removal.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)
